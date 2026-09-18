@@ -1,125 +1,97 @@
+import { useMemo, useState } from "react";
 import "./styles.css";
+import { STAGES, StageKey } from "./types";
+import { avgTemperature, batchStatus } from "./review";
+import { useBatches } from "./store";
+import BatchList from "./components/BatchList";
+import CasePage from "./components/CasePage";
 
 const project = {
-  "sourceNo": 5,
-  "id": "hxyfront-62003",
-  "port": 62003,
-  "title": "法医昆虫学样本记录",
-  "domain": "法医昆虫学",
-  "prompt": "做一个法医昆虫学样本记录前端工具，用来记录采样地点、环境温度、尸体暴露阶段、昆虫种类、发育阶段、采样时间、保存方式和鉴定备注。页面需要有样本批次列表、发育阶段筛选、温度记录图、案件样本关联页和单个样本详情卡片。",
-  "palette": [
-    "#365314",
-    "#a16207",
-    "#dc2626"
-  ],
-  "metrics": [
-    "样本批次",
-    "平均温度",
-    "发育阶段",
-    "待鉴定"
-  ],
-  "filters": [
-    "卵",
-    "幼虫",
-    "蛹",
-    "成虫"
-  ],
-  "fields": [
-    "采样地点",
-    "环境温度",
-    "暴露阶段",
-    "昆虫种类",
-    "发育阶段",
-    "保存方式"
-  ],
-  "records": [
-    [
-      "CASE-042-A",
-      "室外草地",
-      "幼虫三龄，28.6℃",
-      "乙醇保存"
-    ],
-    [
-      "CASE-042-B",
-      "阴影区域",
-      "蛹期样本",
-      "需复核种属"
-    ],
-    [
-      "CASE-051-A",
-      "水沟边缘",
-      "成虫采集",
-      "已完成拍照"
-    ]
-  ]
+  id: "hxyfront-62003",
+  title: "法医昆虫学样本记录",
+  rule:
+    "批次复核规则：同一案件内样本按采样时间排序，发育阶段不能倒退；连续样本温差超过 8℃ 时必须填写保存方式并标记待复检，否则整批拒绝且原数据不变。复检确认只解除标记，原始值、拒绝原因与调整痕迹全部保留。",
 };
 
+const STAGE_FILTERS: (StageKey | "全部")[] = ["全部", ...STAGES];
+
 function App() {
+  const { batches, runReview, confirmRecheck, adjustSample, resetAll } =
+    useBatches();
+  const [activeId, setActiveId] = useState(batches[0]?.id ?? "");
+  const [stageFilter, setStageFilter] = useState<StageKey | "全部">("全部");
+
+  const active =
+    batches.find((b) => b.id === activeId) ?? batches[0];
+
+  const metrics = useMemo(() => {
+    const allSamples = batches.flatMap((b) => b.samples);
+    const pending = allSamples.filter((s) => s.pendingRecheck).length;
+    const rejected = batches.filter((b) => batchStatus(b) === "已拒绝").length;
+    return [
+      { label: "样本批次", value: batches.length },
+      { label: "平均温度", value: avgTemperature(allSamples) },
+      { label: "待复检", value: pending },
+      { label: "已拒绝批次", value: rejected },
+    ];
+  }, [batches]);
+
+  if (!active) return null;
+
   return (
     <main className="app">
       <section className="hero">
-        <p>{project.id} · 源提示词{project.sourceNo} · Port {project.port}</p>
+        <p>{project.id} · 法医昆虫学实验室</p>
         <h1>{project.title}</h1>
-        <span>{project.prompt}</span>
+        <span>{project.rule}</span>
       </section>
 
       <section className="metrics">
-        {project.metrics.map((metric: string, index: number) => (
-          <article key={metric}>
-            <small>{metric}</small>
-            <strong>{[86, 14, 7, 32][index] ?? 12}</strong>
+        {metrics.map((m) => (
+          <article key={m.label}>
+            <small>{m.label}</small>
+            <strong>{m.value}</strong>
           </article>
         ))}
       </section>
 
       <section className="workspace">
-        <aside className="panel">
-          <h2>{project.domain}筛选</h2>
-          <div className="chips">
-            {project.filters.map((item: string) => (
-              <button key={item}>{item}</button>
-            ))}
-          </div>
-        </aside>
-
-        <section className="panel form-panel">
-          <div className="heading">
-            <div>
-              <p>专业字段</p>
-              <h2>新增记录</h2>
+        <div className="sidebar">
+          <BatchList
+            batches={batches}
+            activeId={active.id}
+            onSelect={setActiveId}
+          />
+          <aside className="panel">
+            <h2>发育阶段筛选</h2>
+            <div className="chips">
+              {STAGE_FILTERS.map((item) => (
+                <button
+                  key={item}
+                  className={stageFilter === item ? "chip-on" : ""}
+                  onClick={() => setStageFilter(item)}
+                >
+                  {item}
+                </button>
+              ))}
             </div>
-            <button className="primary">保存草稿</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
+            <button className="reset-btn" onClick={resetAll}>
+              恢复演示数据
+            </button>
+          </aside>
+        </div>
 
-      <section className="panel">
-        <div className="heading">
-          <div>
-            <p>历史记录</p>
-            <h2>近期工作台</h2>
-          </div>
-          <button>导出摘要</button>
-        </div>
-        <div className="records">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")}>
-              <b>{String(index + 1).padStart(2, "0")}</b>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
+        {/* key 随批次变化，切换案件时重置内部选中态 */}
+        <CasePage
+          key={active.id}
+          batch={active}
+          stageFilter={stageFilter}
+          onRunReview={() => runReview(active.id)}
+          onConfirmRecheck={(sampleId) => confirmRecheck(active.id, sampleId)}
+          onAdjust={(sampleId, draft, reason) =>
+            adjustSample(active.id, sampleId, draft, reason)
+          }
+        />
       </section>
     </main>
   );
